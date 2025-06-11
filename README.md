@@ -14,7 +14,7 @@ A minimal MCP server for Azure Boards. It exposes tools to fetch work items, lis
 ```json
 {
   "mcpServers": {
-    "azure-boards-mcp": {
+    "azure-boards": {
       "command": "npx",
       "type": "stdio",
       "args": ["-y", "github:abdielou/mcp-azure-boards"],
