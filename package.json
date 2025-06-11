@@ -6,6 +6,7 @@
   "main": "build/index.js",
   "type": "module",
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc",
     "start": "node build/index.js"
   },
@@ -22,5 +23,8 @@
   },
   "author": "",
   "license": "ISC",
-  "types": "./build/index.d.ts"
+  "types": "./build/index.d.ts",
+  "bin": {
+    "mcp-azure-boards": "build/index.js"
+  }
 }

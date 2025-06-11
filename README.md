@@ -9,41 +9,20 @@ A minimal MCP server for Azure Boards. It exposes tools to fetch work items, lis
 - List all attachments for a given work item
 - Fetch content from a URL (including images and files)
 
-## Prerequisites
+# Cursor Registration
 
-- Node.js (v16 or newer recommended)
-- An Azure DevOps Personal Access Token (PAT) with appropriate permissions
-
-## Setup
-
-1. Clone the repository and install dependencies:
-   ```sh
-   npm install
-   ```
-2. Create a `.env` file in the project root with the following variables:
-   ```env
-   AZDO_PAT=your-azure-devops-personal-access-token
-   AZDO_ORG_URL=https://dev.azure.com/your-organization
-   ```
-
-## Build
-
-To compile the TypeScript source:
-
-```sh
-npm run build
+```json
+{
+  "mcpServers": {
+    "azure-boards-mcp": {
+      "command": "npx",
+      "type": "stdio",
+      "args": ["-y", "github:abdielou/mcp-azure-boards"],
+      "env": {
+        "AZDO_PAT": "<your-pat>",
+        "AZDO_ORG_URL": "<your-org-url>"
+      }
+    }
+  }
+}
 ```
-
-## Usage
-
-To start the MCP Azure Boards server:
-
-```sh
-npm start
-```
-
-The server will connect via stdio and expose tools for use in compatible clients (such as Cursor).
-
-## License
-
-ISC
