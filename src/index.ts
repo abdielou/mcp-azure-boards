@@ -178,7 +178,7 @@ server.tool(
     let extractedName: string | undefined;
     try {
       extractedName = new URL(url).searchParams.get("fileName") ?? undefined;
-    } catch {}
+    } catch { }
     const finalName = overrideName ?? extractedName;
     // Images -> image block
     if (mimeType.startsWith("image/")) {
@@ -210,6 +210,233 @@ server.tool(
         },
       ],
     };
+  }
+);
+
+server.tool(
+  "comments",
+  "Fetches all comments for a work item; returns a text block with Markdown list of comments. If there are too many comments, returns the most recent ones up to the limit.",
+  {
+    ticket: z.number().describe("The work item ID"),
+    limit: z
+      .number()
+      .optional()
+      .default(100)
+      .describe("Maximum number of comments to return (default: 100)"),
+  },
+  async ({ ticket, limit = 100 }) => {
+    try {
+      // First, get the work item to retrieve the project name
+      const witApi = await witApiPromise;
+      const wi = await witApi.getWorkItem(ticket, undefined, undefined, 1);
+      if (!wi) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Work item ${ticket} not found.`,
+            },
+          ],
+        };
+      }
+
+      const fields = wi.fields ?? ({} as Record<string, unknown>);
+      const project = String(fields["System.TeamProject"] ?? "");
+
+      if (!project) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Could not determine project for work item ${ticket}.`,
+            },
+          ],
+        };
+      }
+
+      const apiUrl = `${orgUrl.replace(/\/$/, "")}/${encodeURIComponent(project)}/_apis/wit/workItems/${ticket}/comments?$top=${limit}&$orderby=createdDate desc&api-version=7.1-preview`;
+
+      const response = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Basic ${Buffer.from(":" + pat).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Work item ${ticket} has no comments or comments API is not available.`,
+              },
+            ],
+          };
+        }
+        const errorText = await response.text();
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error fetching comments: ${response.status} ${errorText}`,
+            },
+          ],
+        };
+      }
+
+      const data = await response.json();
+      const comments = data.comments ?? [];
+      const totalCount = data.count ?? comments.length;
+
+      if (comments.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `No comments found for work item ${ticket}.`,
+            },
+          ],
+        };
+      }
+
+      // Convert HTML comments to Markdown
+      const commentsMarkdown = comments
+        .map((comment: any) => {
+          const id = comment.id ?? "<no id>";
+          const author = comment.createdBy?.displayName ?? "<unknown>";
+          const createdDate = comment.createdDate
+            ? new Date(comment.createdDate).toLocaleString()
+            : "<no date>";
+          const htmlText = comment.text ?? "<no content>";
+          const text = turndownService.turndown(htmlText);
+          return `### Comment #${id}\n\n**Author:** ${author}  \n**Date:** ${createdDate}\n\n${text}\n\n---`;
+        })
+        .join("\n\n");
+
+      let header = `# Comments for Work Item #${ticket}\n\n`;
+      if (totalCount > limit) {
+        header += `⚠️ **Showing ${limit} most recent comments out of ${totalCount} total.**\n\n`;
+      } else {
+        header += `**Total:** ${totalCount} comment${totalCount !== 1 ? "s" : ""}\n\n`;
+      }
+
+      return {
+        content: [{ type: "text", text: header + commentsMarkdown }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error fetching comments: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+server.tool(
+  "comment",
+  "Fetches a single comment by its ID; returns a text block with Markdown summary of the comment",
+  {
+    comment_id: z.number().describe("The comment ID"),
+    ticket: z.number().describe("The work item ID that contains this comment"),
+  },
+  async ({ comment_id, ticket }) => {
+    try {
+      // First, get the work item to retrieve the project name
+      const witApi = await witApiPromise;
+      const wi = await witApi.getWorkItem(ticket, undefined, undefined, 1);
+      if (!wi) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Work item ${ticket} not found.`,
+            },
+          ],
+        };
+      }
+
+      const fields = wi.fields ?? ({} as Record<string, unknown>);
+      const project = String(fields["System.TeamProject"] ?? "");
+
+      if (!project) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Could not determine project for work item ${ticket}.`,
+            },
+          ],
+        };
+      }
+
+      const apiUrl = `${orgUrl.replace(/\/$/, "")}/${encodeURIComponent(project)}/_apis/wit/workItems/${ticket}/comments/${comment_id}?api-version=7.1-preview`;
+
+      const response = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Basic ${Buffer.from(":" + pat).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Comment ${comment_id} not found in work item ${ticket}.`,
+              },
+            ],
+          };
+        }
+        const errorText = await response.text();
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error fetching comment: ${response.status} ${errorText}`,
+            },
+          ],
+        };
+      }
+
+      const comment = await response.json();
+      const id = comment.id ?? "<no id>";
+      const author = comment.createdBy?.displayName ?? "<unknown>";
+      const createdDate = comment.createdDate
+        ? new Date(comment.createdDate).toLocaleString()
+        : "<no date>";
+      const modifiedDate = comment.modifiedDate
+        ? new Date(comment.modifiedDate).toLocaleString()
+        : null;
+      const htmlText = comment.text ?? "<no content>";
+      const text = turndownService.turndown(htmlText);
+
+      let modifiedSection = "";
+      if (modifiedDate && modifiedDate !== createdDate) {
+        modifiedSection = `  \n**Modified:** ${modifiedDate}`;
+      }
+
+      const markdown = `# Comment #${id}\n\n**Author:** ${author}  \n**Created:** ${createdDate}${modifiedSection}\n\n---\n\n${text}`;
+
+      return {
+        content: [{ type: "text", text: markdown }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error fetching comment: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
   }
 );
 
